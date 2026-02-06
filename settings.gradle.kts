@@ -1,1 +1,1 @@
-rootProject.name = "katomstats"
+rootProject.name = "katom"

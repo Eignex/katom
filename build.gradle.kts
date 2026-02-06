@@ -41,9 +41,9 @@ publishing {
         create<MavenPublication>("mavenJava") {
             from(components["java"])
             pom {
-                name.set("katomstats")
+                name.set("katom")
                 description.set("Pure Kotlin JVM library.")
-                url.set("https://github.com/Eignex/katomstats")
+                url.set("https://github.com/Eignex/katom")
                 licenses {
                     license {
                         name.set("Apache-2.0")
@@ -51,9 +51,9 @@ publishing {
                     }
                 }
                 scm {
-                    url.set("https://github.com/Eignex/katomstats")
-                    connection.set("scm:git:https://github.com/Eignex/katomstats.git")
-                    developerConnection.set("scm:git:ssh://git@github.com/Eignex/katomstats.git")
+                    url.set("https://github.com/Eignex/katom")
+                    connection.set("scm:git:https://github.com/Eignex/katom.git")
+                    developerConnection.set("scm:git:ssh://git@github.com/Eignex/katom.git")
                 }
                 developers {
                     developer {
