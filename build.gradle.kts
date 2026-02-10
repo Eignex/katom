@@ -2,6 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm") version "2.3.0"
+    kotlin("plugin.serialization") version "2.3.0"
     id("org.jetbrains.dokka") version "2.1.0"
     id("org.jetbrains.kotlinx.kover") version "0.9.5"
     `maven-publish`
@@ -15,6 +16,8 @@ version = findProperty("ciVersion") as String? ?: "SNAPSHOT"
 
 repositories { mavenCentral() }
 
+val katomGenerator by configurations.creating
+
 kotlin {
     jvmToolchain(21)
     compilerOptions { jvmTarget.set(JvmTarget.JVM_21) }
@@ -27,6 +30,16 @@ java {
 
 dependencies {
     testImplementation(kotlin("test"))
+    implementation(kotlin("reflect"))
+    compileOnly("org.jetbrains.kotlinx:kotlinx-serialization-core:1.10.0")
+    // TODO remove these later
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
+    implementation("com.eignex:kencode:1.0.0")
+
+    compileOnly("com.fasterxml.jackson.core:jackson-annotations:2.16.1")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.10.0")
+
+    katomGenerator("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.3.0")
 }
 
 tasks.test { useJUnitPlatform() }
@@ -84,4 +97,20 @@ signing {
     } else {
         logger.lifecycle("Signing disabled: signingKey or signingPassword not defined.")
     }
+}
+
+val generatedSourceDir = layout.buildDirectory.dir("generated/source/katom")
+
+val generateExtensions by tasks.registering(ExtensionGeneratorTask::class) {
+    inputDir.set(file("src/main/kotlin"))
+    outputFile.set(generatedSourceDir.map { it.file("com/eignex/katom/Extensions.kt") })
+    compilerClasspath.from(katomGenerator)
+}
+
+sourceSets.main {
+    java.srcDir(files(generatedSourceDir).builtBy(generateExtensions))
+}
+
+tasks.named("compileKotlin") {
+    dependsOn(generateExtensions)
 }
