@@ -1,13 +1,7 @@
-package com.eignex.katom
+package com.eignex.katom.stat
 
 import com.eignex.katom.core.WeightedMeanResult
 import com.eignex.katom.core.WeightedVarianceResult
-import com.eignex.katom.stat.DecayingMean
-import com.eignex.katom.stat.DecayingVariance
-import com.eignex.katom.stat.Mean
-import com.eignex.katom.stat.Moments
-import com.eignex.katom.stat.Sum
-import com.eignex.katom.stat.Variance
 import kotlin.test.*
 
 private const val DELTA = 1e-12
