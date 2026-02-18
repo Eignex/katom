@@ -7,12 +7,24 @@ import kotlin.time.Duration
  *
  * @param R The type of the result object produced by this statistic.
  */
-interface Stat<out R : Result> {
-    val name: String
+interface Stat<R : Result> {
+    /**
+     * Merge stat results from another accumulator into this.
+     */
+    fun merge(values: R)
+
+    /**
+     * Reset stats to initial state.
+     */
+    fun reset()
+
     /**
      * Computes and returns the current state of the statistic.
      */
     fun read(): R
+
+    val mode: StreamMode
+    val name: String?
 }
 
 /**
@@ -20,7 +32,7 @@ interface Stat<out R : Result> {
  *
  * **Covers:** Distributions (Mean, Variance, Skewness), Quantiles (P50, P99), Min/Max.
  */
-interface SeriesStat<out R : Result> : Stat<R> {
+interface SeriesStat<R : Result> : Stat<R> {
     /**
      * Updates the statistic with a new value.
      *
@@ -35,7 +47,7 @@ interface SeriesStat<out R : Result> : Stat<R> {
  *
  * **Covers:** Correlation (Pearson, Spearman), Covariance, Simple Linear Regression.
  */
-interface PairedStat<out R : Result> : Stat<R> {
+interface PairedStat<R : Result> : Stat<R> {
     /**
      * Updates the statistic with a pair of values.
      *
@@ -52,11 +64,11 @@ interface PairedStat<out R : Result> : Stat<R> {
  *
  * Base unit: **Nanoseconds**.
  */
-interface TimeStat<out R : Result> : Stat<R> {
+interface TimeStat<R : Result> : Stat<R> {
     /**
      * Updates with an explicit timestamp in Nanoseconds.
      */
-    fun update(value: Double, timestampNanos: Long, weight: Double=1.0)
+    fun update(value: Double, nanos: Long, weight: Double=1.0)
 
     /**
      * Updates using a Duration (e.g. relative to start).
@@ -65,12 +77,23 @@ interface TimeStat<out R : Result> : Stat<R> {
         update(value, timestamp.inWholeNanoseconds, weight)
 }
 
+fun <R : Result> TimeStat<R>.atNow(): SeriesStat<R> = object : SeriesStat<R> {
+    override fun update(value: Double, weight: Double) =
+        this@atNow.update(value, System.nanoTime(), weight)
+
+    override fun merge(values: R) = this@atNow.merge(values)
+    override fun reset() = this@atNow.reset()
+    override val name: String? get() = this@atNow.name
+    override fun read(): R = this@atNow.read()
+    override val mode: StreamMode get() = this@atNow.mode
+}
+
 /**
  * Statistics derived from multidimensional vectors.
  *
  * **Covers:** Centroids, Multivariate Normal Distribution, PCA (Covariance Matrix).
  */
-interface VectorStat<out R : Result> : Stat<R> {
+interface VectorStat<R : Result> : Stat<R> {
     /**
      * Updates the statistic with a vector.
      *
@@ -78,20 +101,4 @@ interface VectorStat<out R : Result> : Stat<R> {
      * @param weight The importance of this vector (default 1.0).
      */
     fun update(vector: DoubleArray, weight: Double = 1.0)
-}
-
-/**
- * Statistics for evaluating regression models where inputs are vectors.
- *
- * **Covers:** RMSE (Root Mean Squared Error), MAE, R-Squared, Residual Analysis.
- */
-interface ResponseStat<out R : Result> : Stat<R> {
-    /**
-     * Updates the statistic with a feature vector and its target outcome.
-     *
-     * @param x The independent variable or first metric.
-     * @param y The dependent variable or second metric.
-     * @param weight The importance of this sample (default 1.0).
-     */
-    fun update(x: DoubleArray, y: Double, weight: Double = 1.0)
 }

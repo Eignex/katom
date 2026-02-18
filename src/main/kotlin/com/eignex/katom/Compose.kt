@@ -1,40 +1,63 @@
-@file:Suppress("SERIALIZER_TYPE_INCOMPATIBLE")
-
 package com.eignex.katom
 
 import kotlinx.serialization.*
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+
+@Serializable
+@SerialName("ResultList")
+data class ResultList(
+    val results: List<Result>,
+) : Result {
+    override val name: String? get() = null
+}
+
+
+// working, annotate fields in ResultsX
+class ResultDelegateSerializer<T : Result> : KSerializer<T> {
+
+    private val delegate = Result.serializer()
+    override val descriptor = delegate.descriptor
+
+    override fun serialize(encoder: Encoder, value: T) {
+        encoder.encodeSerializableValue(delegate, value as Result)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    override fun deserialize(decoder: Decoder): T {
+        return decoder.decodeSerializableValue(delegate) as T
+    }
+}
 
 @Serializable
 @SerialName("Result2")
 data class Result2<A : Result, B : Result>(
-    @Serializable(with = ResultSerializer::class) val first: A,
-    @Serializable(with = ResultSerializer::class) val second: B
+    @Serializable(with = ResultDelegateSerializer::class) val first: A,
+    @Serializable(with = ResultDelegateSerializer::class) val second: B
 ) : Result {
-    override val name: String = "result2"
+    override val name: String? get() = null
 }
 
 @Serializable
 @SerialName("Result3")
 data class Result3<A : Result, B : Result, C : Result>(
-    @Serializable(with = ResultSerializer::class) val first: A,
-    @Serializable(with = ResultSerializer::class) val second: B,
-    @Serializable(with = ResultSerializer::class) val third: C
+    @Serializable(with = ResultDelegateSerializer::class) val first: A,
+    @Serializable(with = ResultDelegateSerializer::class) val second: B,
+    @Serializable(with = ResultDelegateSerializer::class) val third: C
 ) : Result {
-    override val name: String = "result3"
+    override val name: String? get() = null
 }
 
 @Serializable
-@SerialName("Result3")
+@SerialName("Result4")
 data class Result4<A : Result, B : Result, C : Result, D : Result>(
-    @Serializable(with = ResultSerializer::class) val first: A,
-    @Serializable(with = ResultSerializer::class) val second: B,
-    @Serializable(with = ResultSerializer::class) val third: C,
-    @Serializable(with = ResultSerializer::class) val fourth: D
+    @Serializable(with = ResultDelegateSerializer::class) val first: A,
+    @Serializable(with = ResultDelegateSerializer::class) val second: B,
+    @Serializable(with = ResultDelegateSerializer::class) val third: C,
+    @Serializable(with = ResultDelegateSerializer::class) val fourth: D
 ) : Result {
-    override val name: String = "result4"
+    override val name: String? get() = null
 }
-
-object ResultSerializer : KSerializer<Result> by Result.serializer()
 
 class SeriesStat2<A : Result, B : Result>(
     val s1: SeriesStat<A>, val s2: SeriesStat<B>
@@ -46,6 +69,17 @@ class SeriesStat2<A : Result, B : Result>(
     }
 
     override fun read() = Result2<A, B>(s1.read(), s2.read())
+    override val mode: StreamMode
+        get() = TODO("Not yet implemented")
+
+    override fun merge(values: Result2<A, B>) {
+        s1.merge(values.first)
+        s2.merge(values.second)
+    }
+
+    override fun reset() {
+        TODO("Not yet implemented")
+    }
 
     override val name: String = "seriesStat2"
 }
@@ -67,6 +101,19 @@ class SeriesStat3<A : Result, B : Result, C : Result>(
         val r2 = s2.read()
         val r3 = s3.read()
         return Result3(r1, r2, r3)
+    }
+
+    override val mode: StreamMode
+        get() = TODO("Not yet implemented")
+
+    override fun merge(values: Result3<A, B, C>) {
+        s1.merge(values.first)
+        s2.merge(values.second)
+        s3.merge(values.third)
+    }
+
+    override fun reset() {
+        TODO("Not yet implemented")
     }
 
     override val name: String = "seriesStat3"
@@ -94,6 +141,20 @@ class SeriesStat4<A : Result, B : Result, C : Result, D : Result>(
         return Result4(r1, r2, r3, r4)
     }
 
+    override val mode: StreamMode
+        get() = TODO("Not yet implemented")
+
+    override fun merge(values: Result4<A, B, C, D>) {
+        s1.merge(values.first)
+        s2.merge(values.second)
+        s3.merge(values.third)
+        s4.merge(values.fourth)
+    }
+
+    override fun reset() {
+        TODO("Not yet implemented")
+    }
+
     override val name: String = "seriesStat4"
 }
 
@@ -101,12 +162,23 @@ class TimeStat2<A : Result, B : Result>(
     val s1: TimeStat<A>, val s2: TimeStat<B>
 ) : TimeStat<Result2<A, B>> {
 
-    override fun update(value: Double, timestampNanos: Long, weight: Double) {
-        s1.update(value, timestampNanos, weight)
-        s2.update(value, timestampNanos, weight)
+    override fun update(value: Double, nanos: Long, weight: Double) {
+        s1.update(value, nanos, weight)
+        s2.update(value, nanos, weight)
     }
 
     override fun read() = Result2<A, B>(s1.read(), s2.read())
+    override val mode: StreamMode
+        get() = TODO("Not yet implemented")
+
+    override fun merge(values: Result2<A, B>) {
+        s1.merge(values.first)
+        s2.merge(values.second)
+    }
+
+    override fun reset() {
+        TODO("Not yet implemented")
+    }
 
     override val name: String = "timeStat2"
 }
@@ -117,10 +189,10 @@ class TimeStat3<A : Result, B : Result, C : Result>(
     val s3: TimeStat<C>,
 ) : TimeStat<Result3<A, B, C>> {
 
-    override fun update(value: Double, timestampNanos: Long, weight: Double) {
-        s1.update(value, timestampNanos, weight)
-        s2.update(value, timestampNanos, weight)
-        s3.update(value, timestampNanos, weight)
+    override fun update(value: Double, nanos: Long, weight: Double) {
+        s1.update(value, nanos, weight)
+        s2.update(value, nanos, weight)
+        s3.update(value, nanos, weight)
     }
 
     override fun read(): Result3<A, B, C> {
@@ -128,6 +200,19 @@ class TimeStat3<A : Result, B : Result, C : Result>(
         val r2 = s2.read()
         val r3 = s3.read()
         return Result3(r1, r2, r3)
+    }
+
+    override val mode: StreamMode
+        get() = TODO("Not yet implemented")
+
+    override fun merge(values: Result3<A, B, C>) {
+        s1.merge(values.first)
+        s2.merge(values.second)
+        s3.merge(values.third)
+    }
+
+    override fun reset() {
+        TODO("Not yet implemented")
     }
 
     override val name: String = "timeStat3"
@@ -140,11 +225,11 @@ class TimeStat4<A : Result, B : Result, C : Result, D : Result>(
     val s4: TimeStat<D>,
 ) : TimeStat<Result4<A, B, C, D>> {
 
-    override fun update(value: Double, timestampNanos: Long, weight: Double) {
-        s1.update(value, timestampNanos, weight)
-        s2.update(value, timestampNanos, weight)
-        s3.update(value, timestampNanos, weight)
-        s4.update(value, timestampNanos, weight)
+    override fun update(value: Double, nanos: Long, weight: Double) {
+        s1.update(value, nanos, weight)
+        s2.update(value, nanos, weight)
+        s3.update(value, nanos, weight)
+        s4.update(value, nanos, weight)
     }
 
     override fun read(): Result4<A, B, C, D> {
@@ -153,6 +238,20 @@ class TimeStat4<A : Result, B : Result, C : Result, D : Result>(
         val r3 = s3.read()
         val r4 = s4.read()
         return Result4(r1, r2, r3, r4)
+    }
+
+    override val mode: StreamMode
+        get() = TODO("Not yet implemented")
+
+    override fun merge(values: Result4<A, B, C, D>) {
+        s1.merge(values.first)
+        s2.merge(values.second)
+        s3.merge(values.third)
+        s4.merge(values.fourth)
+    }
+
+    override fun reset() {
+        TODO("Not yet implemented")
     }
 
     override val name: String = "timeStat4"
