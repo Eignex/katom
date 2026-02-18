@@ -13,6 +13,7 @@ import org.jetbrains.kotlin.config.CommonConfigurationKeys
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.psi.*
+import org.jetbrains.kotlin.psi.psiUtil.getSuperNames
 import javax.inject.Inject
 
 abstract class ExtensionGeneratorTask : DefaultTask() {
@@ -73,6 +74,32 @@ abstract class GenerateAction : WorkAction<GenerateParameters> {
                 KtPsiFactory(env.project).createFile(file.name, file.readText())
             }.toList()
 
+            // 1. Build Inheritance Map (Class Name -> List of Super Names)
+            // This allows us to traverse the hierarchy even if the parent is in a different file
+            val inheritanceMap = mutableMapOf<String, List<String>>()
+            ktFiles.forEach { file ->
+                file.declarations.filterIsInstance<KtClass>().forEach { ktClass ->
+                    ktClass.name?.let { name ->
+                        inheritanceMap[name] = ktClass.getSuperNames()
+                    }
+                }
+            }
+
+            // 2. Recursive Check Function
+            // Returns true if 'name' is "Result" or if any of its ancestors are "Result"
+            fun isResultDescendant(name: String, visited: Set<String> = emptySet()): Boolean {
+                if (name == "Result") return true
+                if (name in visited) return false // Prevent infinite loops in case of cyclic inheritance
+
+                // If the class isn't in our map, we assume it's not relevant or external
+                // (unless "Result" is external, but we handled the base case above)
+                val parents = inheritanceMap[name] ?: return false
+
+                return parents.any { parentName ->
+                    isResultDescendant(parentName, visited + name)
+                }
+            }
+
             val interfaces = mutableListOf<InterfaceInfo>()
             val results = mutableListOf<ResultClassInfo>()
 
@@ -81,6 +108,9 @@ abstract class GenerateAction : WorkAction<GenerateParameters> {
                     val name = ktClass.name ?: return@forEach
 
                     if (ktClass.isInterface()) {
+                        // Check hierarchy recursively
+                        if (!isResultDescendant(name)) return@forEach
+
                         val props = ktClass.declarations.filterIsInstance<KtProperty>().map { prop ->
                             PropInfo(
                                 name = prop.name!!,
@@ -88,9 +118,10 @@ abstract class GenerateAction : WorkAction<GenerateParameters> {
                                 doc = prop.docComment?.text ?: ""
                             )
                         }.filterNot { it.name == "name"}
+
                         if (props.isNotEmpty()) interfaces.add(InterfaceInfo(name, props))
 
-                    } else if (name.startsWith("Result")) {
+                    } else if (name.matches(Regex("Result\\d"))) {
                         val typeParams = ktClass.typeParameters.map { it.name!! }
                         val primaryConstructor = ktClass.primaryConstructor
                         if (typeParams.isNotEmpty() && primaryConstructor != null) {
@@ -110,9 +141,15 @@ abstract class GenerateAction : WorkAction<GenerateParameters> {
             sb.append("import kotlin.jvm.JvmName\n\n")
 
             results.forEach { res ->
+                // Track generated properties per component (index) to prevent duplicates
+                val generatedPropsPerComponent = Array(res.typeParams.size) { mutableSetOf<String>() }
+
                 interfaces.forEach { iface ->
                     iface.properties.forEach { prop ->
                         res.typeParams.forEachIndexed { index, genericParamName ->
+                            // Check if this property name was already generated for this specific component
+                            if (prop.name in generatedPropsPerComponent[index]) return@forEachIndexed
+
                             val componentName = res.componentNames[index]
                             val typeArgs = res.typeParams.mapIndexed { i, _ ->
                                 if (i == index) genericParamName else "*"
@@ -124,6 +161,8 @@ abstract class GenerateAction : WorkAction<GenerateParameters> {
                             sb.append("@get:JvmName(\"$jvmName\")\n")
                             sb.append("val <$genericParamName : ${iface.name}> ${res.className}<$typeArgs>.${prop.name}: ${prop.type} ")
                             sb.append("get() = $componentName.${prop.name}\n\n")
+
+                            generatedPropsPerComponent[index].add(prop.name)
                         }
                     }
                 }
