@@ -3,330 +3,167 @@ package com.eignex.katom
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.math.sqrt
-import kotlin.time.Duration
-import kotlin.time.DurationUnit
 
 @Serializable
 sealed interface Result {
-    val name: String
-}
-
-interface HasCount : Result {
-    val count: Long
-}
-
-interface HasTotalWeights : Result {
-    val totalWeights: Double
-}
-
-interface HasSum : Result {
-    val sum: Double
-}
-
-interface HasRange : Result {
-    val min: Double
-    val max: Double
-}
-
-interface HasRate : Result {
-    /** The normalized rate in Events Per Second (Hz) */
-    val rate: Double
-    val timestampNanos: Long
-
-    /**
-     * Rescales the throughput to a specific time duration.
-     * Example: rate.per(1.minutes) returns Events Per Minute.
-     */
-    fun per(duration: Duration): Double = rate * duration.toDouble(
-        DurationUnit.SECONDS
-    )
-}
-
-interface HasEntropy : Result {
-    val entropy: Double
-}
-
-interface HasMean : Result {
-    val mean: Double
-}
-
-interface HasVariance : Result {
-    val variance: Double
-
-    val stdDev: Double get() = sqrt(variance)
-}
-
-interface HasUnbiasedVariance : HasTotalWeights, HasVariance {
-
-    /**
-     * Derived Unbiased Sample Variance using Bessel's correction.
-     * Calculated as: variance * (n / (n - 1))
-     */
-    val unbiasedVariance: Double
-        get() = if (totalWeights > 0.0) {
-            variance * (totalWeights / (totalWeights - 1.0))
-        } else {
-            0.0
-        }
-
-    val unbiasedStdDev: Double get() = sqrt(unbiasedVariance)
-}
-
-interface HasShapeMoments : HasTotalWeights {
-    val skew: Double
-    val kurtosis: Double
-
-    val unbiasedSkew: Double
-        get() {
-            if (totalWeights <= 2 || skew == 0.0) return 0.0
-            return (sqrt(totalWeights * (totalWeights - 1)) / (totalWeights - 2)) * skew
-        }
-
-    val unbiasedKurtosis: Double get(){
-        if (totalWeights <= 3) return 0.0
-        val factor1 = (totalWeights - 1) / ((totalWeights - 2) * (totalWeights - 3))
-        val factor2 = (totalWeights + 1) * kurtosis + 6.0
-        return factor1 * factor2
-    }
-}
-
-interface HasQuantiles : Result {
-    val probabilities: DoubleArray
-    val quantiles: DoubleArray
-}
-
-interface HasHistogram : Result {
-    val bounds: DoubleArray
-    val counts: LongArray
-}
-
-interface HasCardinality : Result {
-    val cardinality: Long
-    val errorBounds: Double
-}
-
-interface HasVectorSum : Result {
-    val sums: DoubleArray
-}
-
-interface HasVectorRange : Result {
-    val mins: DoubleArray
-    val maxs: DoubleArray
-}
-
-interface HasVectorMean : Result {
-    val means: DoubleArray
-}
-
-interface HasVectorVar : Result {
-    val variances: DoubleArray
-}
-
-interface HasVectorNorms : Result {
-    val l1Norm: Double
-    val l2Norm: Double
-}
-
-interface HasCovarianceMatrix : Result {
-    val dimension: Int
-    val matrix: DoubleArray
-}
-
-interface HasCovariance : Result {
-    val covariance: Double
-}
-
-interface HasCorrelation : Result {
-    val correlation: Double
-}
-
-interface HasRegression : HasTotalWeights {
-    val intercept: Double
-
-    /**
-     * SSE: Sum of Squared Errors (Unexplained variance).
-     */
-    val sse: Double
-
-    /**
-     * SST: Total Sum of Squares (Total variance of y).
-     */
-    val sst: Double
-
-    val rSquared: Double get() = if (sst > 0) 1.0 - (sse / sst) else 0.0
-    val mse: Double get() = if (totalWeights > 0) sse / totalWeights else 0.0
-    val rmse: Double get() = sqrt(mse)
-}
-
-interface HasSLR : HasRegression {
-    val slope: Double
-}
-
-interface HasMLR : HasRegression {
-    val coefficients: DoubleArray
-}
-
-interface HasClassification : HasTotalWeights {
-
-    val tp: Double
-    val fp: Double
-    val tn: Double
-    val fn: Double
-
-    val accuracy: Double get() = (tp + tn) / (tp + tn + fp + fn)
-    val precision: Double get() = if ((tp + fp) > 0) tp / (tp + fp) else 0.0
-    val recall: Double get() = if ((tp + fn) > 0) tp / (tp + fn) else 0.0
-    val f1Score: Double get() = if ((precision + recall) > 0) 2 * (precision * recall) / (precision + recall) else 0.0
-
-    val matrix: Array<DoubleArray>
+    val name: String?
 }
 
 @Serializable
 @SerialName("Count")
 data class CountResult(
-    override val name: String,
-    override val count: Long
-) : HasCount
+    override val count: Long,
+    override val name: String? = null
+) : Result, HasCount
 
 @Serializable
 @SerialName("Sum")
 data class SumResult(
-    override val name: String,
-    override val sum: Double
-) : HasSum
+    override val sum: Double,
+    override val name: String? = null
+) : Result, HasSum
 
 @Serializable
 @SerialName("Mean")
 data class MeanResult(
-    override val name: String,
     override val mean: Double,
-) : HasMean
+    override val name: String? = null,
+) : Result, HasMean
 
 @Serializable
 @SerialName("WeightedMean")
 data class WeightedMeanResult(
-    override val name: String,
     override val totalWeights: Double,
     override val mean: Double,
-) : HasTotalWeights, HasMean
+    override val name: String? = null,
+) : Result, HasTotalWeights, HasMean
+
 
 @Serializable
-@SerialName("VarianceResult")
+@SerialName("Variance")
 data class VarianceResult(
-    override val name: String,
     override val mean: Double,
     override val variance: Double,
-) : HasMean, HasVariance
+    override val name: String? = null
+) : Result, HasMean, HasVariance
+
 
 @Serializable
 @SerialName("WeightedVariance")
 data class WeightedVarianceResult(
-    override val name: String,
     override val totalWeights: Double,
     override val mean: Double,
-    override val variance: Double
-) : HasTotalWeights, HasMean, HasVariance
+    override val variance: Double,
+    override val name: String? = null
+) : Result, HasMean, HasSampleVariance
 
 @Serializable
 @SerialName("Moments")
 data class MomentsResult(
-    override val name: String,
     override val totalWeights: Double,
     override val mean: Double,
-    override val variance: Double,
-    override val skew: Double,
-    override val kurtosis: Double
-) : HasTotalWeights, HasMean, HasVariance, HasShapeMoments
+    override val m2: Double,
+    override val m3: Double,
+    override val m4: Double,
+    override val name: String? = null
+) : Result, HasTotalWeights, HasMean, HasSampleVariance, HasShapeMoments {
+    override val sst: Double get() = m2
+}
 
 @Serializable
 @SerialName("Range")
 data class RangeResult(
-    override val name: String,
     override val min: Double,
-    override val max: Double
-) : HasRange
+    override val max: Double,
+    override val name: String? = null
+) : Result, HasRange
 
 @Serializable
 @SerialName("Rate")
 data class RateResult(
-    override val name: String,
+    val startTime: Long,
+    val totalValue: Double,
+    override val timestampNanos: Long,
+    override val name: String? = null
+) : Result, HasRate {
+    override val rate: Double get(){
+        val durationSeconds = (timestampNanos - startTime) / 1_000_000_000.0
+        val safeDuration = if (durationSeconds <= 0.0) 1e-9 else durationSeconds
+        return totalValue / safeDuration
+    }
+}
+
+@Serializable
+@SerialName("DecayingRate")
+data class DecayingRateResult(
     override val rate: Double,
-    override val timestampNanos: Long
-) : HasRate
+    override val timestampNanos: Long,
+    override val name: String? = null
+) : Result, HasRate
 
 @Serializable
 @SerialName("Quantiles")
 data class QuantilesResult(
-    override val name: String,
     override val probabilities: DoubleArray,
-    override val quantiles: DoubleArray
-) : HasQuantiles
+    override val quantiles: DoubleArray,
+    override val name: String? = null
+) : Result, HasQuantiles
 
 @Serializable
 @SerialName("Histogram")
 data class HistogramResult(
-    override val name: String,
     override val bounds: DoubleArray,
-    override val counts: LongArray
-) : HasHistogram
+    override val counts: LongArray,
+    override val name: String? = null
+) : Result, HasHistogram
 
 @Serializable
 @SerialName("VectorRange")
 data class VectorRangeResult(
-    override val name: String,
     override val mins: DoubleArray,
-    override val maxs: DoubleArray
-) : HasVectorRange
+    override val maxs: DoubleArray,
+    override val name: String? = null
+) : Result, HasVectorRange
 
 @Serializable
 @SerialName("VectorVariance")
 data class VectorVarianceResult(
-    override val name: String,
     override val totalWeights: Double,
     override val means: DoubleArray,
-    override val variances: DoubleArray
-) : HasTotalWeights, HasVectorMean, HasVectorVar
+    override val variances: DoubleArray,
+    override val name: String? = null
+) : Result, HasTotalWeights, HasVectorMean, HasVectorVar
 
 @Serializable
-@SerialName("SLR")
-data class SLRResult(
-    override val name: String,
+@SerialName("OLS")
+data class OLSResult(
     override val totalWeights: Double,
-    val xMean: Double,
-    val xVariance: Double,
-    val yMean: Double,
-    val yVariance: Double,
-    override val covariance: Double
-) :
-    HasTotalWeights,
-    HasCovariance,
+    override val slope: Double,
+    override val intercept: Double,
+    override val sse: Double,
+    val x: VarianceResult,
+    val y: VarianceResult,
+    override val name: String? = null,
+) : Result,
+    HasLinearModel,
+    HasRegression,
     HasCorrelation,
-    HasSLR, Result {
+    HasCovariance {
 
-    // --- Correlation & Regression Basics ---
-
+    /**
+     * Calculated from R² and the sign of the slope.
+     * This avoids needing to store the raw covariance if not strictly necessary.
+     */
     override val correlation: Double
         get() {
-            val sx = sqrt(xVariance)
-            val sy = sqrt(yVariance)
-            return if (sx > 0 && sy > 0) covariance / (sx * sy) else 0.0
-        }
-
-    override val slope: Double
-        get() = if (xVariance > 0) covariance / xVariance else 0.0
-
-    override val intercept: Double
-        get() = yMean - (slope * xMean)
-
-    override val sse: Double
-        get() {
-            if (totalWeights < 2) return 0.0
-            val totalSumSquaresY = yVariance * (totalWeights - 1)
-            return totalSumSquaresY * (1.0 - rSquared)
+            if (sst <= 0.0) return 0.0
+            val r2 = (1.0 - (sse / sst)).coerceAtLeast(0.0)
+            val r = sqrt(r2)
+            return if (slope >= 0) r else -r
         }
     override val sst: Double
-        get() = TODO("Not yet implemented")
+        get() = y.variance * totalWeights
 
-    override val rmse: Double
-        get() = sqrt(mse)
+    override val covariance: Double
+        get() = slope * x.variance
 }
