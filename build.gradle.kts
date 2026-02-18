@@ -32,13 +32,7 @@ dependencies {
     testImplementation(kotlin("test"))
     implementation(kotlin("reflect"))
     compileOnly("org.jetbrains.kotlinx:kotlinx-serialization-core:1.10.0")
-    // TODO remove these later
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
-    implementation("com.eignex:kencode:1.0.0")
-
-    compileOnly("com.fasterxml.jackson.core:jackson-annotations:2.16.1")
     testImplementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.10.0")
-
     katomGenerator("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.3.0")
 }
 
