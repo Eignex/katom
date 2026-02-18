@@ -10,8 +10,6 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.math.pow
 import kotlin.reflect.KProperty
 
-var DEFAULT_MODE: StreamMode = SerialMode
-
 interface StreamMode {
     fun newDouble(initial: Double = 0.0): StreamDouble
     fun newLong(initial: Long = 0L): StreamLong
@@ -56,15 +54,16 @@ operator fun StreamLong.getValue(
 ): Long = load()
 
 class FixedAtomicMode(precision: Int) : StreamMode {
-    class Scaler(
-        val precision: Int,
-        val scale: Double = 10.0.pow(precision),
-        val scaleLong: Long = 10.0.pow(precision).toLong()
+    private val scale: Double = 10.0.pow(precision)
+    private val scaleLong: Long = scale.toLong()
+    private val invScale: Double = 1.0 / scale
+
+    override fun newDouble(initial: Double) = FixedAtomicDouble(
+        (initial * scaleLong).toLong(),
+        scaleLong,
+        invScale
     )
 
-    val scaler = Scaler(precision)
-
-    override fun newDouble(initial: Double) = FixedAtomicDouble(scaler)
     override fun newLong(initial: Long) = AtomicLong(initial)
     override fun <T> newReference(initial: T): StreamRef<T> =
         AtomicReference(initial)
@@ -162,30 +161,28 @@ class SerialRef<T>(var ref: T) : StreamRef<T> {
 }
 
 class FixedAtomicDouble(
-    val scaler: FixedAtomicMode.Scaler, val ref: KAtomicLong
+    initialLong: Long,
+    private val scaleLong: Long,
+    private val invScale: Double
 ) : StreamDouble {
 
-    constructor(
-        scaler: FixedAtomicMode.Scaler, initial: Double = 0.0
-    ) : this(
-        scaler, KAtomicLong((initial * scaler.scaleLong).toLong())
-    )
+    private val ref = KAtomicLong(initialLong)
 
-    override fun load(): Double = ref.load() / scaler.scale
+    override fun load(): Double = ref.load() * invScale
 
     override fun store(value: Double) =
-        ref.store((value * scaler.scaleLong).toLong())
+        ref.store((value * scaleLong).toLong())
 
     override fun add(delta: Double) {
-        ref.addAndFetch((delta * scaler.scaleLong).toLong())
+        ref.addAndFetch((delta * scaleLong).toLong())
     }
 
     override fun addAndGet(delta: Double): Double {
-        return ref.addAndFetch((delta * scaler.scaleLong).toLong()) / scaler.scale
+        return ref.addAndFetch((delta * scaleLong).toLong()) * invScale
     }
 
     override fun getAndAdd(delta: Double): Double {
-        return ref.fetchAndAdd((delta * scaler.scaleLong).toLong()) / scaler.scale
+        return ref.fetchAndAdd((delta * scaleLong).toLong()) * invScale
     }
 }
 
@@ -201,24 +198,28 @@ value class AtomicDouble(val ref: KAtomicLong) : StreamDouble {
     }
 
     override fun add(delta: Double) {
+        if (delta == 0.0) return
         var currentBits = ref.load()
         while (true) {
             val currentVal = Double.fromBits(currentBits)
             val nextBits = (currentVal + delta).toRawBits()
-            val witness = ref.compareAndExchange(currentBits, nextBits)
+            if (currentBits == nextBits) return
 
-            if (witness == currentBits) break // Success!
-            currentBits = witness // Failed, try again with the new value
+            val witness = ref.compareAndExchange(currentBits, nextBits)
+            if (witness == currentBits) break
+            currentBits = witness
         }
     }
 
     override fun addAndGet(delta: Double): Double {
         var currentBits = ref.load()
         while (true) {
-            val nextVal = Double.fromBits(currentBits) + delta
-            val witness =
-                ref.compareAndExchange(currentBits, nextVal.toRawBits())
+            val currentVal = Double.fromBits(currentBits)
+            val nextVal = currentVal + delta
+            val nextBits = nextVal.toRawBits()
+            if (currentBits == nextBits) return nextVal
 
+            val witness = ref.compareAndExchange(currentBits, nextBits)
             if (witness == currentBits) return nextVal
             currentBits = witness
         }
@@ -229,8 +230,9 @@ value class AtomicDouble(val ref: KAtomicLong) : StreamDouble {
         while (true) {
             val currentVal = Double.fromBits(currentBits)
             val nextBits = (currentVal + delta).toRawBits()
-            val witness = ref.compareAndExchange(currentBits, nextBits)
+            if (currentBits == nextBits) return currentVal
 
+            val witness = ref.compareAndExchange(currentBits, nextBits)
             if (witness == currentBits) return currentVal
             currentBits = witness
         }
