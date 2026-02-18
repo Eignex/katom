@@ -1,65 +1,88 @@
-@file:OptIn(ExperimentalAtomicApi::class)
-
 package com.eignex.katom
 
-import kotlin.concurrent.atomics.*
 import kotlin.time.Duration
 
-interface UniversalStat<out T : Result> : SeriesStat<T>, PairedStat<T>,
-    TimeStat<T>, VectorStat<T>, ResponseStat<T> {
+interface UniversalStat<T : Result> :
+    SeriesStat<T>,
+    PairedStat<T>,
+    TimeStat<T>,
+    VectorStat<T> {
     override fun update(
         x: Double, y: Double, weight: Double
     ) = update(x, weight)
 
     override fun update(
-        value: Double, timestampNanos: Long, weight: Double
+        value: Double, nanos: Long, weight: Double
     ) = update(value, weight)
 
     override fun update(vector: DoubleArray, weight: Double) =
         update(0.0, weight)
-
-    override fun update(
-        x: DoubleArray, y: Double, weight: Double
-    ) = update(0.0, weight)
 }
 
 class Count(
-    override val name: String = "count"
+    override val mode: StreamMode = defaultStreamMode,
+    override val name: String? = null
 ) : UniversalStat<CountResult>, HasCount {
 
-    private val _count = AtomicLong(0L)
-    override val count: Long get() = _count.load()
+    private val _count = mode.newLong(0L)
+    override val count: Long by _count
 
     override fun update(value: Double, weight: Double) {
-        _count.incrementAndFetch()
+        _count.add(1L)
     }
 
-    override fun read() = CountResult(name, count)
+    override fun merge(values: CountResult) {
+        _count.add(values.count)
+    }
+
+    override fun reset() {
+        _count.store(0L)
+    }
+
+    override fun read() = CountResult(count, name)
 }
 
 
 class TotalWeights(
-    override val name: String = "totalWeights", sumOfWeights: Double = 0.0
+    override val mode: StreamMode = SerialMode,
+    override val name: String? = null
 ) : UniversalStat<SumResult>, HasTotalWeights {
 
-    private val _totalWeights = AtomicLong(sumOfWeights.toRawBits())
-    override val totalWeights: Double get() = Double.fromBits(_totalWeights.load())
+    private val _totalWeights = mode.newDouble(0.0)
+    override val totalWeights: Double by _totalWeights
 
     override fun update(value: Double, weight: Double) {
-        _totalWeights.addDouble(value * weight)
+        _totalWeights.add(weight)
     }
 
-    override fun read() = SumResult(name, totalWeights)
+    override fun merge(values: SumResult) {
+        _totalWeights.add(values.sum)
+    }
+
+    override fun reset() {
+        _totalWeights.store(0.0)
+    }
+
+    override fun read() = SumResult(totalWeights, name)
 }
 
 class EventRate(
-    override val name: String = "eventRate", startTime: Long = -1L
+    override val mode: StreamMode = defaultStreamMode,
+    override val name: String?=null
 ) : UniversalStat<RateResult>, HasRate {
 
-    private val _rate = Rate(name, startTime)
+    private val _rate = Rate(mode, name)
 
     override fun update(value: Double, weight: Double) {
-        _rate.update(value, System.nanoTime())
+        _rate.update(1.0, System.nanoTime())
+    }
+
+    override fun merge(values: RateResult) {
+        _rate.merge(values)
+    }
+
+    override fun reset() {
+        _rate.reset()
     }
 
     override fun read() = _rate.read()
@@ -69,13 +92,25 @@ class EventRate(
 }
 
 class DecayingEventRate(
-    override val name: String = "decayingEventRate", halfLife: Duration
-) : UniversalStat<RateResult> {
-    private val rate = DecayingRate(halfLife)
+    halfLife: Duration,
+    override val mode: StreamMode = defaultStreamMode,
+    override val name: String? = null
+) : UniversalStat<DecayingRateResult>, HasRate {
+    private val _rate = DecayingRate(halfLife, mode, name)
 
     override fun update(value: Double, weight: Double) {
-        rate.update(value, System.nanoTime())
+        _rate.update(1.0, System.nanoTime())
     }
 
-    override fun read() = rate.read()
+    override fun merge(values: DecayingRateResult) {
+        _rate.merge(values)
+    }
+
+    override fun reset() {
+        _rate.reset()
+    }
+
+    override fun read() = _rate.read()
+    override val rate: Double get() = _rate.rate
+    override val timestampNanos: Long get() = _rate.timestampNanos
 }

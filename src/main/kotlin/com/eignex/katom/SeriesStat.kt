@@ -1,204 +1,371 @@
-@file:OptIn(ExperimentalAtomicApi::class)
-
 package com.eignex.katom
 
-import kotlin.concurrent.atomics.AtomicLong
-import kotlin.concurrent.atomics.ExperimentalAtomicApi
-import kotlin.math.pow
-import kotlin.math.sqrt
+import kotlin.math.exp
 
-class Sum(override val name: String = "sum", sum: Double = 0.0) :
-    SeriesStat<SumResult>, HasSum {
+class Sum(
+    override val mode: StreamMode = defaultStreamMode,
+    override val name: String? = null
+) : SeriesStat<SumResult>, HasSum {
 
-    private val _sum = AtomicLong(sum.toRawBits())
-    override val sum: Double get() = Double.fromBits(_sum.load())
+    private val _sum = mode.newDouble(0.0)
+    override val sum: Double by _sum
 
     override fun update(
         value: Double, weight: Double
     ) {
-        _sum.addDouble(value * weight)
+        _sum.add(value * weight)
     }
 
-    override fun read() = SumResult(name, sum)
+    override fun read() = SumResult(sum, name)
+
+    override fun merge(values: SumResult) {
+        _sum.add(values.sum)
+    }
+
+    override fun reset() {
+        _sum.store(0.0)
+    }
 }
 
 class Mean(
-    override val name: String = "mean",
-    mean: Double = 0.0,
-    totalWeight: Double = 0.0
+    override val mode: StreamMode = defaultStreamMode,
+    override val name: String? = null
 ) : SeriesStat<WeightedMeanResult>,
     HasTotalWeights, HasMean {
 
-    private val _w = AtomicLong(totalWeight.toRawBits())
-    private val _m1 = AtomicLong(mean.toRawBits())
+    private val _totalWeights = mode.newDouble(0.0)
+    private val _mean = mode.newDouble(0.0)
 
-    override val totalWeights: Double get() = _w.loadDouble()
-    override val mean: Double get() = _m1.loadDouble()
+    override val totalWeights: Double by _totalWeights
+    override val mean: Double by _mean
 
     override fun update(value: Double, weight: Double) {
-        val oldMean = _m1.loadDouble()
-        val nextW = _w.addDouble(weight)
+        val oldMean = _mean.load()
+        val nextW = _totalWeights.addAndGet(weight)
 
         val delta = value - oldMean
         val r = delta * (weight / nextW)
 
-        _m1.addDouble(r)
+        _mean.add(r)
     }
 
-    override fun read() = WeightedMeanResult(name, totalWeights, mean)
+    override fun read() = WeightedMeanResult(totalWeights, mean, name)
+
+    override fun merge(values: WeightedMeanResult) {
+        if (values.totalWeights <= 0.0) return
+
+        val nextW = totalWeights + values.totalWeights
+        val delta = values.mean - mean
+        val deltaM = delta * (values.totalWeights / nextW)
+
+        _mean.add(deltaM)
+        _totalWeights.add(values.totalWeights)
+    }
+
+    override fun reset() {
+        _totalWeights.store(0.0)
+        _mean.store(0.0)
+    }
 }
 
 class Variance(
-    override val name: String = "variance",
-    totalWeights: Double = 0.0,
-    mean: Double = 0.0,
-    variance: Double = 0.0
-) : SeriesStat<WeightedVarianceResult>, HasMean, HasUnbiasedVariance {
-    private val _w = AtomicLong(totalWeights.toRawBits())
-    private val _m1 = AtomicLong(mean.toRawBits())
-    private val _m2 = AtomicLong((variance * totalWeights).toRawBits())
+    override val mode: StreamMode = defaultStreamMode,
+    override val name: String? = null
+) : SeriesStat<WeightedVarianceResult>, HasMean, HasSampleVariance {
 
-    override val totalWeights: Double get() = _w.loadDouble()
-    override val mean: Double get() = _m1.loadDouble()
-    override val variance: Double
-        get() {
-            val weight = _w.loadDouble()
-            return if (weight > 1.0) _m2.loadDouble() / weight else 0.0
-        }
+    private val _totalWeights = mode.newDouble(0.0)
+    private val _mean = mode.newDouble(0.0)
+    private val _sst = mode.newDouble(0.0)
+
+    override val totalWeights: Double by _totalWeights
+    override val mean: Double by _mean
+    override val sst: Double by _sst
 
     override fun update(value: Double, weight: Double) {
-        val oldMean = _m1.loadDouble()
-        val nextW = _w.addDouble(weight)
+        val oldMean = mean
+        val nextW = _totalWeights.addAndGet(weight)
 
         val delta = value - oldMean
         val r = delta * (weight / nextW)
 
-        _m1.addDouble(r)
-        _m2.addDouble((nextW - weight) * delta * r)
+        _mean.add(r)
+        _sst.add((nextW - weight) * delta * r)
+    }
+
+    override fun merge(values: WeightedVarianceResult) {
+        val w1 = _totalWeights.load()
+        val w2 = values.totalWeights
+        if (w2 <= 0.0) return
+
+        val m1 = _mean.load()
+        val m2 = values.mean
+        val sst2 = values.sst
+
+        val nextW = w1 + w2
+        val delta = m2 - m1
+
+        val deltaM = delta * (w2 / nextW)
+        _mean.add(deltaM)
+
+        val sstShift = (delta * delta) * (w1 * w2 / nextW)
+        _sst.add(sst2 + sstShift)
+
+        _totalWeights.add(w2)
+    }
+
+    override fun reset() {
+        _totalWeights.store(0.0)
+        _mean.store(0.0)
+        _sst.store(0.0)
     }
 
     override fun read() =
-        WeightedVarianceResult(name, totalWeights, mean, variance)
+        WeightedVarianceResult(totalWeights, mean, variance, name)
 }
 
 class Moments(
-    override val name: String = "moments",
-    totalWeights: Double = 0.0,
-    mean: Double = 0.0,
-    variance: Double = 0.0,
-    skew: Double = 0.0,
-    kurtosis: Double = 0.0
-) : SeriesStat<MomentsResult>, HasMean, HasUnbiasedVariance, HasShapeMoments {
+    override val mode: StreamMode = defaultStreamMode,
+    override val name: String? = null,
+) : SeriesStat<MomentsResult>, HasMean, HasSampleVariance, HasShapeMoments {
 
-    private val _w = AtomicLong(totalWeights.toRawBits())
-    private val _m1 = AtomicLong(mean.toRawBits())
-    private val _m2 = AtomicLong((variance * totalWeights).toRawBits())
-    private val _m3 =
-        AtomicLong((skew * totalWeights * sqrt(variance).pow(3)).toRawBits())
-    private val _m4 =
-        AtomicLong(((kurtosis + 3.0) * totalWeights * variance.pow(2)).toRawBits())
+    private val _w = mode.newDouble(0.0)
+    private val _m1 = mode.newDouble(0.0)
+    private val _m2 = mode.newDouble(0.0)
+    private val _m3 = mode.newDouble(0.0)
+    private val _m4 = mode.newDouble(0.0)
 
-    override val totalWeights: Double get() = _w.loadDouble()
-    override val mean: Double get() = _m1.loadDouble()
-    override val variance: Double get() = if (totalWeights > 1) _m2.loadDouble() / totalWeights else 0.0
-    override val skew: Double
-        get() = if (variance > 0) (_m3.loadDouble() / totalWeights) / variance.pow(
-            1.5
-        ) else 0.0
-    override val kurtosis: Double
-        get() = if (variance > 0) (_m4.loadDouble() / totalWeights) / variance.pow(
-            2.0
-        ) - 3.0 else 0.0
+    override val totalWeights: Double by _w
+    override val mean: Double by _m1
+    override val m2: Double by _m2
+    override val sst: Double get() = m2
+    override val m3: Double by _m3
+    override val m4: Double by _m4
 
     override fun update(value: Double, weight: Double) {
-        val m1 = _m1.loadDouble()
-        val m2 = _m2.loadDouble()
-        val m3 = _m3.loadDouble()
-        val nextW = _w.addDouble(weight)
+        if (weight <= 0.0) return
+
+        val oldM1 = _m1.load()
+        val oldM2 = _m2.load()
+        val oldM3 = _m3.load()
+        val nextW = _w.addAndGet(weight)
         val oldW = nextW - weight
 
-        val delta = value - m1
+        val delta = value - oldM1
         val deltaW = delta * (weight / nextW)
         val deltaW2 = deltaW * deltaW
         val term1 = delta * deltaW * oldW
 
-        _m1.addDouble(deltaW)
-        _m4.addDouble(term1 * deltaW2 * (nextW * nextW - 3 * nextW + 3) + 6 * deltaW2 * m2 - 4 * deltaW * m3)
-        _m3.addDouble(term1 * deltaW * (nextW - 2) - 3 * deltaW * m2)
-        _m2.addDouble(term1)
+        // Update raw sums using deltas
+        _m4.add(term1 * deltaW2 * (nextW * nextW - 3 * nextW + 3) + 6 * deltaW2 * oldM2 - 4 * deltaW * oldM3)
+        _m3.add(term1 * deltaW * (nextW - 2) - 3 * deltaW * oldM2)
+        _m2.add(term1)
+        _m1.add(deltaW)
+    }
+
+    override fun merge(values: MomentsResult) {
+        val w1 = _w.load()
+        val w2 = values.totalWeights
+        if (w2 <= 0.0) return
+
+        val m1 = _m1.load()
+        val m2 = _m2.load()
+        val m3 = _m3.load()
+
+        val nextW = w1 + w2
+        val delta = values.mean - m1
+
+        val delta2 = delta * delta
+        val delta3 = delta2 * delta
+        val delta4 = delta3 * delta
+
+        val nextWSq = nextW * nextW
+        val nextWCu = nextWSq * nextW
+        // Incremental M3 using incoming raw m2/m3
+        val m3Delta = values.m3 +
+                delta3 * (w1 * w2 * (w1 - w2) / nextWSq) +
+                3.0 * delta * (w1 * values.m2 - w2 * m2) / nextW
+
+        // Incremental M4 using incoming raw m2/m3/m4
+        val m4Delta = values.m4 +
+                delta4 * (w1 * w2 * (w1 * w1 - w1 * w2 + w2 * w2) / nextWCu) +
+                6.0 * delta2 * (w1 * w1 * values.m2 + w2 * w2 * m2) / nextWSq +
+                4.0 * delta * (w1 * values.m3 - w2 * m3) / nextW
+
+        _m4.add(m4Delta)
+        _m3.add(m3Delta)
+        _m2.add(values.m2 + (delta2 * w1 * w2 / nextW))
+        _m1.add(delta * (w2 / nextW))
+        _w.add(w2)
+    }
+
+    override fun reset() {
+        _w.store(0.0)
+        _m1.store(0.0)
+        _m2.store(0.0)
+        _m3.store(0.0)
+        _m4.store(0.0)
     }
 
     override fun read() =
-        MomentsResult(name, totalWeights, mean, variance, skew, kurtosis)
+        MomentsResult(totalWeights, mean, m2, m3, m4, name)
 }
 
 class DecayingMean(
-    private val alpha: Double,
-    override val name: String = "decayingMean",
-    mean: Double = Double.NaN
-) : SeriesStat<MeanResult>, HasMean {
+    val alpha: Double,
+    override val mode: StreamMode = defaultStreamMode,
+    override val name: String? = null
+) : SeriesStat<WeightedMeanResult>, HasMean, HasTotalWeights {
 
-    private val _mean = AtomicLong(mean.toRawBits())
-    override val mean: Double
-        get() = _mean.loadDouble().let { if (it.isNaN()) 0.0 else it }
+    private val _biasedMean = mode.newDouble(0.0)
+    private val _totalWeights = mode.newDouble(0.0)
 
-    override fun update(value: Double, weight: Double) {
-        val a = alpha * weight
-        _mean.updateDouble { current ->
-            if (current.isNaN()) {
-                value
-            } else {
-                current + a * (value - current)
-            }
-        }
+    private fun getCorrection(weight: Double): Double {
+        return if (weight == 0.0) 0.0 else 1.0 - exp(-alpha * weight)
     }
 
-    override fun read() = MeanResult(name, mean)
+    override val totalWeights: Double by _totalWeights
+    override val mean: Double
+        get() {
+            val biased = _biasedMean.load()
+            val weight = _totalWeights.load()
+            val correction = getCorrection(weight)
+            return if (correction == 0.0) 0.0 else biased / correction
+        }
+
+
+    override fun update(value: Double, weight: Double) {
+        val a = getCorrection(weight)
+        _biasedMean.add(a * (value - _biasedMean.load()))
+        _totalWeights.add(weight)
+    }
+
+    override fun merge(values: WeightedMeanResult) {
+        val localMean = this.mean
+        val localWeight = _totalWeights.load()
+        val localEffectiveWeight = getCorrection(localWeight)
+
+        val remoteMean = values.mean
+        val remoteWeight = values.totalWeights
+        val remoteEffectiveWeight = getCorrection(remoteWeight)
+
+        val totalEffectiveWeight = localEffectiveWeight + remoteEffectiveWeight
+        if (totalEffectiveWeight == 0.0) return
+
+        val mergedMean =
+            (localMean * localEffectiveWeight + remoteMean * remoteEffectiveWeight) / totalEffectiveWeight
+
+        val newTotalWeight = localWeight + remoteWeight
+
+        val newCorrection = getCorrection(newTotalWeight)
+        val targetBiasedMean = mergedMean * newCorrection
+
+        val delta = targetBiasedMean - _biasedMean.load()
+
+        _biasedMean.add(delta)
+        _totalWeights.add(remoteWeight)
+    }
+
+    override fun reset() {
+        _biasedMean.store(0.0)
+        _totalWeights.store(0.0)
+    }
+
+    override fun read() = WeightedMeanResult(totalWeights, mean, name)
 }
 
 class DecayingVariance(
-    private val alpha: Double,
-    override val name: String = "decayingVariance",
-    mean: Double = Double.NaN,
-    variance: Double = 0.0
-) : SeriesStat<VarianceResult>, HasMean, HasVariance {
+    val alpha: Double,
+    override val mode: StreamMode = defaultStreamMode,
+    override val name: String? = null
+) : SeriesStat<WeightedVarianceResult>, HasMean, HasVariance, HasTotalWeights {
 
-    private val _mean = AtomicLong(mean.toRawBits())
-    private val _var = AtomicLong(variance.toRawBits())
+    private val _biasedMean = mode.newDouble(0.0)
+    private val _biasedM2 = mode.newDouble(0.0)
+    private val _totalWeights = mode.newDouble(0.0)
 
-    override val mean: Double
-        get() = _mean.loadDouble().let { if (it.isNaN()) 0.0 else it }
-
-    override val variance: Double
-        get() = _var.loadDouble()
-
-    override fun update(value: Double, weight: Double) {
-        val a = alpha * weight
-        var oldMean: Double
-        var diff: Double
-
-        while (true) {
-            val currentBits = _mean.load()
-            oldMean = Double.fromBits(currentBits)
-
-            if (oldMean.isNaN()) {
-                if (_mean.compareAndSet(currentBits, value.toRawBits())) {
-                    return
-                }
-            } else {
-                val newMean = oldMean + a * (value - oldMean)
-                if (_mean.compareAndSet(currentBits, newMean.toRawBits())) {
-                    diff = value - oldMean
-                    break
-                }
-            }
-        }
-
-        val incr = a * diff
-        _var.updateDouble { currentVar ->
-            (1.0 - a) * (currentVar + diff * incr)
-        }
+    private fun getCorrection(weight: Double): Double {
+        return if (weight == 0.0) 0.0 else 1.0 - exp(-alpha * weight)
     }
 
-    override fun read() = VarianceResult(name, mean, variance)
+    override val totalWeights: Double by _totalWeights
+
+    override val mean: Double
+        get() {
+            val biased = _biasedMean.load()
+            val weight = _totalWeights.load()
+            val correction = getCorrection(weight)
+            return if (correction == 0.0) 0.0 else biased / correction
+        }
+
+    override val variance: Double
+        get() {
+            val biasedVar = _biasedM2.load()
+            val weight = _totalWeights.load()
+            val correction = getCorrection(weight)
+            return if (correction == 0.0) 0.0 else biasedVar / correction
+        }
+
+    override fun update(value: Double, weight: Double) {
+        val a = getCorrection(weight) // Corrected from alpha * weight
+
+        val currentRawMean = _biasedMean.load()
+        val delta = value - currentRawMean
+        val increment = a * delta
+        val newRawMean = currentRawMean + increment
+
+        val currentBiasedM2 = _biasedM2.load()
+        _biasedM2.add(a * (delta * (value - newRawMean) - currentBiasedM2))
+        _biasedMean.add(increment)
+        _totalWeights.add(weight)
+    }
+
+    override fun merge(values: WeightedVarianceResult) {
+        val remoteWeightRaw = values.totalWeights
+        if (remoteWeightRaw <= 0.0) return
+
+        val localWeightRaw = _totalWeights.load()
+        val w1 = getCorrection(localWeightRaw)
+        val w2 = getCorrection(remoteWeightRaw)
+        val wSum = w1 + w2
+
+        if (wSum == 0.0) return
+
+        val localMean = this.mean
+        val localVar = this.variance
+        val remoteMean = values.mean
+        val remoteVar = values.variance
+
+        // Merge Means
+        val mergedMean = (localMean * w1 + remoteMean * w2) / wSum
+
+        val deltaMean = localMean - remoteMean
+        val weightedVarSum = (w1 * localVar) + (w2 * remoteVar)
+        val betweenGroupTerm = (w1 * w2 * deltaMean * deltaMean) / wSum
+
+        val mergedVariance = (weightedVarSum + betweenGroupTerm) / wSum
+
+        val newTotalWeight = localWeightRaw + remoteWeightRaw
+        val newCorrection = getCorrection(newTotalWeight)
+
+        val targetBiasedMean = mergedMean * newCorrection
+        _biasedMean.add(targetBiasedMean - _biasedMean.load())
+
+        val targetBiasedM2 = mergedVariance * newCorrection
+        _biasedM2.add(targetBiasedM2 - _biasedM2.load())
+
+        _totalWeights.add(remoteWeightRaw)
+    }
+
+    override fun reset() {
+        _biasedMean.store(0.0)
+        _biasedM2.store(0.0)
+        _totalWeights.store(0.0)
+    }
+
+    override fun read() = WeightedVarianceResult(
+        totalWeights,
+        mean,
+        variance,
+        name
+    )
 }
