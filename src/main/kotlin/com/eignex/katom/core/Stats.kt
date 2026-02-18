@@ -78,16 +78,6 @@ interface TimeStat<R : Result> : Stat<R> {
         update(value, timestamp.inWholeNanoseconds, weight)
 }
 
-fun <R : Result> TimeStat<R>.atNow(): SeriesStat<R> = object : SeriesStat<R> {
-    override fun update(value: Double, weight: Double) =
-        this@atNow.update(value, System.nanoTime(), weight)
-
-    override fun merge(values: R) = this@atNow.merge(values)
-    override fun reset() = this@atNow.reset()
-    override val name: String? get() = this@atNow.name
-    override fun read(): R = this@atNow.read()
-    override val mode: StreamMode get() = this@atNow.mode
-}
 
 /**
  * Statistics derived from multidimensional vectors.
