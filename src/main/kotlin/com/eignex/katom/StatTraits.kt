@@ -144,6 +144,11 @@ interface HasCorrelation : Result {
     val correlation: Double
 }
 
+interface HasQuantile : Result {
+    val probability: Double
+    val quantile: Double
+}
+
 interface HasQuantiles : Result {
     val probabilities: DoubleArray
     val quantiles: DoubleArray

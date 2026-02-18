@@ -102,6 +102,14 @@ data class DecayingRateResult(
 ) : Result, HasRate
 
 @Serializable
+@SerialName("Quantile")
+data class QuantileResult(
+    override val probability: Double,
+    override val quantile: Double,
+    override val name: String? = null
+) : Result, HasQuantile
+
+@Serializable
 @SerialName("Quantiles")
 data class QuantilesResult(
     override val probabilities: DoubleArray,
