@@ -1,5 +1,7 @@
-package com.eignex.katom
+package com.eignex.katom.concurrent
 
+import com.eignex.katom.core.*
+import com.eignex.katom.stat.UniversalStat
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write

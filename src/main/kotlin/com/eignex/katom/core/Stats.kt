@@ -1,5 +1,6 @@
-package com.eignex.katom
+package com.eignex.katom.core
 
+import com.eignex.katom.concurrent.StreamMode
 import kotlin.time.Duration
 
 /**
@@ -68,12 +69,12 @@ interface TimeStat<R : Result> : Stat<R> {
     /**
      * Updates with an explicit timestamp in Nanoseconds.
      */
-    fun update(value: Double, nanos: Long, weight: Double=1.0)
+    fun update(value: Double, nanos: Long, weight: Double = 1.0)
 
     /**
      * Updates using a Duration (e.g. relative to start).
      */
-    fun update(value: Double, timestamp: Duration, weight: Double=1.0) =
+    fun update(value: Double, timestamp: Duration, weight: Double = 1.0) =
         update(value, timestamp.inWholeNanoseconds, weight)
 }
 

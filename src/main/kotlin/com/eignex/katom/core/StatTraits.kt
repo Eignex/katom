@@ -1,4 +1,4 @@
-package com.eignex.katom
+package com.eignex.katom.core
 
 import kotlin.math.pow
 import kotlin.math.sqrt
@@ -102,7 +102,8 @@ interface HasShapeMoments : HasSampleVariance {
     val unbiasedKurtosis: Double
         get() {
             if (totalWeights <= 3) return 0.0
-            val factor1 = (totalWeights - 1) / ((totalWeights - 2) * (totalWeights - 3))
+            val factor1 =
+                (totalWeights - 1) / ((totalWeights - 2) * (totalWeights - 3))
             val factor2 = (totalWeights + 1) * kurtosis + 6.0
             return factor1 * factor2
         }
@@ -178,7 +179,7 @@ interface HasRegression : HasSampleVariance {
     val sse: Double
 
     /** Sum of squares due to regression */
-    val ssr: Double get() = sst-sse
+    val ssr: Double get() = sst - sse
 
     val mse: Double
         get() = if (totalWeights > 0) sse / totalWeights else 0.0

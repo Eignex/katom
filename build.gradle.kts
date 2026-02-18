@@ -97,7 +97,7 @@ val generatedSourceDir = layout.buildDirectory.dir("generated/source/katom")
 
 val generateExtensions by tasks.registering(ExtensionGeneratorTask::class) {
     inputDir.set(file("src/main/kotlin"))
-    outputFile.set(generatedSourceDir.map { it.file("com/eignex/katom/Extensions.kt") })
+    outputFile.set(generatedSourceDir.map { it.file("com/eignex/katom/core/Extensions.kt") })
     compilerClasspath.from(katomGenerator)
 }
 

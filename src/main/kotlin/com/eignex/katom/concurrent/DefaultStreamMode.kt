@@ -1,4 +1,4 @@
-package com.eignex.katom
+package com.eignex.katom.concurrent
 
 private val threadLocalMode = ThreadLocal.withInitial<StreamMode> { SerialMode }
 

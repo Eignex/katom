@@ -1,4 +1,7 @@
-package com.eignex.katom
+package com.eignex.katom.stat
+
+import com.eignex.katom.concurrent.*
+import com.eignex.katom.core.*
 
 class FrugalQuantile(
     val q: Double,

@@ -1,4 +1,4 @@
-package com.eignex.katom
+package com.eignex.katom.core
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -86,11 +86,13 @@ data class RateResult(
     override val timestampNanos: Long,
     override val name: String? = null
 ) : Result, HasRate {
-    override val rate: Double get(){
-        val durationSeconds = (timestampNanos - startTime) / 1_000_000_000.0
-        val safeDuration = if (durationSeconds <= 0.0) 1e-9 else durationSeconds
-        return totalValue / safeDuration
-    }
+    override val rate: Double
+        get() {
+            val durationSeconds = (timestampNanos - startTime) / 1_000_000_000.0
+            val safeDuration =
+                if (durationSeconds <= 0.0) 1e-9 else durationSeconds
+            return totalValue / safeDuration
+        }
 }
 
 @Serializable

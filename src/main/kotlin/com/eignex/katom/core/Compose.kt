@@ -1,5 +1,6 @@
-package com.eignex.katom
+package com.eignex.katom.core
 
+import com.eignex.katom.concurrent.StreamMode
 import kotlinx.serialization.*
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder

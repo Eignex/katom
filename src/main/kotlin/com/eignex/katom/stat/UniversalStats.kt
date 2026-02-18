@@ -1,5 +1,10 @@
-package com.eignex.katom
+package com.eignex.katom.stat
 
+import com.eignex.katom.concurrent.SerialMode
+import com.eignex.katom.concurrent.StreamMode
+import com.eignex.katom.concurrent.defaultStreamMode
+import com.eignex.katom.concurrent.getValue
+import com.eignex.katom.core.*
 import kotlin.time.Duration
 
 interface UniversalStat<T : Result> :
@@ -68,7 +73,7 @@ class TotalWeights(
 
 class EventRate(
     override val mode: StreamMode = defaultStreamMode,
-    override val name: String?=null
+    override val name: String? = null
 ) : UniversalStat<RateResult>, HasRate {
 
     private val _rate = Rate(mode, name)

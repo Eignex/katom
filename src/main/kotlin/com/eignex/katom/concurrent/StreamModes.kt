@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalAtomicApi::class)
 
-package com.eignex.katom
+package com.eignex.katom.concurrent
 
 import java.util.concurrent.atomic.DoubleAdder as JDoubleAdder
 import java.util.concurrent.atomic.LongAdder as JLongAdder
@@ -66,7 +66,8 @@ class FixedAtomicMode(precision: Int) : StreamMode {
 
     override fun newDouble(initial: Double) = FixedAtomicDouble(scaler)
     override fun newLong(initial: Long) = AtomicLong(initial)
-    override fun <T> newReference(initial: T): StreamRef<T> = AtomicReference(initial)
+    override fun <T> newReference(initial: T): StreamRef<T> =
+        AtomicReference(initial)
 }
 
 object AtomicMode : StreamMode {
@@ -187,6 +188,7 @@ class FixedAtomicDouble(
         return ref.fetchAndAdd((delta * scaler.scaleLong).toLong()) / scaler.scale
     }
 }
+
 @JvmInline
 value class AtomicDouble(val ref: KAtomicLong) : StreamDouble {
 
@@ -214,7 +216,8 @@ value class AtomicDouble(val ref: KAtomicLong) : StreamDouble {
         var currentBits = ref.load()
         while (true) {
             val nextVal = Double.fromBits(currentBits) + delta
-            val witness = ref.compareAndExchange(currentBits, nextVal.toRawBits())
+            val witness =
+                ref.compareAndExchange(currentBits, nextVal.toRawBits())
 
             if (witness == currentBits) return nextVal
             currentBits = witness

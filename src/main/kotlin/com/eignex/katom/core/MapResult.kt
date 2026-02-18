@@ -1,4 +1,4 @@
-package com.eignex.katom
+package com.eignex.katom.core
 
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
@@ -76,7 +76,8 @@ private fun Result.flattenToList(
         // todo somehow result2 first/second not added
         // trying to remove trim excess a bit
         if (value is Result) {
-            val name = value.name ?: value::class.simpleName!!.removeSuffix("Result")
+            val name =
+                value.name ?: value::class.simpleName!!.removeSuffix("Result")
             val newPrefix = if (usePrefix) "$prefix$name." else ""
             destination.addAll(value.flattenToList(usePrefix, newPrefix))
         } else {
