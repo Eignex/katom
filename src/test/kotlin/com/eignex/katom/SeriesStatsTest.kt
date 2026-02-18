@@ -28,6 +28,14 @@ class SumTest {
         s1.merge(s2.read())
         assertEquals(30.0, s1.sum, DELTA)
     }
+
+    @Test
+    fun `test reset`() {
+        val sum = Sum()
+        sum.update(100.0)
+        sum.reset()
+        assertEquals(0.0, sum.sum, DELTA)
+    }
 }
 
 class MeanTest {
@@ -66,6 +74,23 @@ class MeanTest {
         mean.merge(WeightedMeanResult(0.0, 100.0, "mean"))
         assertEquals(5.0, mean.mean, DELTA)
     }
+
+    @Test
+    fun `test negative values`() {
+        val mean = Mean()
+        mean.update(-10.0)
+        mean.update(-20.0)
+        assertEquals(-15.0, mean.mean, DELTA)
+    }
+
+    @Test
+    fun `test reset`() {
+        val mean = Mean()
+        mean.update(50.0)
+        mean.reset()
+        assertEquals(0.0, mean.mean, DELTA)
+        assertEquals(0.0, mean.totalWeights, DELTA)
+    }
 }
 
 class VarianceTest {
@@ -102,6 +127,14 @@ class VarianceTest {
     }
 
     @Test
+    fun `test zero variance`() {
+        val vari = Variance()
+        repeat(10) { vari.update(5.0) }
+        assertEquals(5.0, vari.mean, DELTA)
+        assertEquals(0.0, vari.variance, DELTA)
+    }
+
+    @Test
     fun `test merge`() {
         val v1 = Variance().apply { (1..5).forEach { update(it.toDouble(), 1.0) } }
         val v2 = Variance().apply { (6..10).forEach { update(it.toDouble(), 1.0) } }
@@ -117,6 +150,17 @@ class VarianceTest {
         v1.update(1.0)
         v1.merge(Variance().read())
         assertEquals(1.0, v1.totalWeights, DELTA)
+    }
+
+    @Test
+    fun `test reset`() {
+        val vari = Variance()
+        vari.update(10.0)
+        vari.update(20.0)
+        vari.reset()
+        assertEquals(0.0, vari.totalWeights, DELTA)
+        assertEquals(0.0, vari.mean, DELTA)
+        assertEquals(0.0, vari.variance, DELTA)
     }
 }
 
@@ -140,7 +184,16 @@ class MomentsTest {
         // Right-skewed data
         val data = listOf(1.0, 1.0, 1.0, 2.0, 10.0)
         data.forEach { stat.update(it, 1.0) }
-        assert(stat.skewness > 0)
+        assertTrue(stat.skewness > 0.0)
+    }
+
+    @Test
+    fun `test negative skewness`() {
+        val stat = Moments()
+        // Left-skewed data
+        val data = listOf(10.0, 10.0, 10.0, 9.0, 1.0)
+        data.forEach { stat.update(it, 1.0) }
+        assertTrue(stat.skewness < 0.0)
     }
 
     @Test
@@ -150,7 +203,17 @@ class MomentsTest {
         data.forEach { stat.update(it, 1.0) }
 
         // Excess Kurtosis for this small flat-ish set will be negative (Platykurtic)
-        assert(stat.kurtosis < 0)
+        assertTrue(stat.kurtosis < 0.0)
+    }
+
+    @Test
+    fun `test leptokurtic distribution`() {
+        val stat = Moments()
+        // Heavy tails (Leptokurtic) -> high peak, extreme outliers
+        repeat(100) { stat.update(0.0, 1.0) }
+        stat.update(100.0, 1.0)
+        stat.update(-100.0, 1.0)
+        assertTrue(stat.kurtosis > 0.0)
     }
 
     @Test
@@ -164,6 +227,20 @@ class MomentsTest {
 
         assertEquals(60.5, m1.mean, delta)
         assertEquals(4.0, m1.totalWeights, delta)
+    }
+
+    @Test
+    fun `test reset`() {
+        val stat = Moments()
+        stat.update(10.0)
+        stat.update(20.0)
+        stat.reset()
+
+        assertEquals(0.0, stat.totalWeights, delta)
+        assertEquals(0.0, stat.mean, delta)
+        assertEquals(0.0, stat.variance, delta)
+        assertEquals(0.0, stat.skewness, delta)
+        assertEquals(0.0, stat.kurtosis, delta)
     }
 }
 
@@ -182,6 +259,17 @@ class DecayingStatsTest {
     }
 
     @Test
+    fun `DecayingMean biases toward heavy recent values`() {
+        val stat = DecayingMean(alpha = 0.5)
+        stat.update(10.0, 1.0)
+        stat.update(100.0, 10.0) // Massive recent update
+
+        // A simple mean would be ~91.8, but a heavily decayed mean
+        // will aggressively track the latest dense value.
+        assertTrue(stat.mean > 80.0, "Mean should heavily favor the massive recent update")
+    }
+
+    @Test
     fun `DecayingVariance tracking volatility shift`() {
         val stat = DecayingVariance(alpha = 0.1)
 
@@ -197,10 +285,39 @@ class DecayingStatsTest {
     }
 
     @Test
+    fun `DecayingVariance empty merge`() {
+        val stat = DecayingVariance(alpha = 0.1)
+        stat.update(10.0, 1.0)
+        stat.update(20.0, 1.0)
+        val currentVar = stat.variance
+
+        // Merge with zero-weight remote
+        stat.merge(WeightedVarianceResult(0.0, 0.0, 0.0))
+
+        assertEquals(currentVar, stat.variance, delta)
+    }
+
+    @Test
     fun `DecayingVariance bias correction prevents zero division`() {
         val stat = DecayingVariance(alpha = 0.1)
         // Should return 0.0 or something sensible, not NaN, before updates
         assertEquals(0.0, stat.mean, delta)
         assertEquals(0.0, stat.variance, delta)
+    }
+
+    @Test
+    fun `test reset for decaying stats`() {
+        val meanStat = DecayingMean(alpha = 0.5)
+        meanStat.update(10.0)
+        meanStat.reset()
+        assertEquals(0.0, meanStat.mean, delta)
+
+        val varStat = DecayingVariance(alpha = 0.5)
+        varStat.update(10.0)
+        varStat.update(20.0)
+        varStat.reset()
+        assertEquals(0.0, varStat.mean, delta)
+        assertEquals(0.0, varStat.variance, delta)
+        assertEquals(0.0, varStat.totalWeights, delta)
     }
 }
