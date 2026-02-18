@@ -1,8 +1,14 @@
 # katom
 
 TODO:
-- streaming histogram
-- Ben-Haim/Tom-Tov (dynamic histogram) or Greenwald-Khanna.
+
+histogram algos
+- ddsketch
+- frugal streaming
+
+cardinality
+- hyperloglog
+- linear counting (bitset)
 
 - for pgbm:
 - vector of variance
