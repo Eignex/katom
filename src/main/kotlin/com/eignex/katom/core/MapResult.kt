@@ -76,8 +76,7 @@ private fun Result.flattenToList(
         // todo somehow result2 first/second not added
         // trying to remove trim excess a bit
         if (value is Result) {
-            val name =
-                value.name ?: value::class.simpleName!!.removeSuffix("Result")
+            val name = value.nameOrDefault
             val newPrefix = if (usePrefix) "$prefix$name." else ""
             destination.addAll(value.flattenToList(usePrefix, newPrefix))
         } else {
