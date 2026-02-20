@@ -22,10 +22,13 @@ interface HasRange : Result {
     val max: Double
 }
 
+interface HasTimestamp {
+    val timestampNanos: Long
+}
+
 interface HasRate : Result {
     /** The normalized rate in Events Per Second (Hz) */
     val rate: Double
-    val timestampNanos: Long
 
     /**
      * Rescales the throughput to a specific time duration.
@@ -114,29 +117,6 @@ interface HasCardinality : Result {
     val errorBounds: Double
 }
 
-interface HasVectorSum : Result {
-    val sums: DoubleArray
-}
-
-interface HasVectorRange : Result {
-    val mins: DoubleArray
-    val maxs: DoubleArray
-}
-
-interface HasVectorMean : Result {
-    val means: DoubleArray
-}
-
-interface HasVectorVar : Result {
-    val variances: DoubleArray
-}
-
-interface HasVectorNorms : Result {
-    val l1Norm: Double
-    val l2Norm: Double
-    val infNorm: Double
-}
-
 interface HasCovariance : Result {
     val covariance: Double
 }
@@ -157,7 +137,14 @@ interface HasQuantiles : Result {
 
 interface HasHistogram : Result {
     val bounds: DoubleArray
-    val counts: LongArray
+    val weights: DoubleArray
+}
+
+interface HasSparseHistogram : Result {
+    val lowerBounds: DoubleArray
+    val upperBounds: DoubleArray
+
+    val weights: DoubleArray
 }
 
 /**
