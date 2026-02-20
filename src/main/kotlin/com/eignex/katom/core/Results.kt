@@ -2,12 +2,16 @@ package com.eignex.katom.core
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.math.pow
 import kotlin.math.sqrt
 
 @Serializable
 sealed interface Result {
     val name: String?
 }
+
+val Result.nameOrDefault
+    get() = name ?: this::class.simpleName?.removeSuffix("Result") ?: "unknown"
 
 @Serializable
 @SerialName("Count")
@@ -81,14 +85,14 @@ data class RangeResult(
 @Serializable
 @SerialName("Rate")
 data class RateResult(
-    val startTime: Long,
+    val startTimestampNanos: Long,
     val totalValue: Double,
     override val timestampNanos: Long,
     override val name: String? = null
-) : Result, HasRate {
+) : Result, HasRate, HasTimestamp {
     override val rate: Double
         get() {
-            val durationSeconds = (timestampNanos - startTime) / 1_000_000_000.0
+            val durationSeconds = (timestampNanos - startTimestampNanos) / 1e9
             val safeDuration =
                 if (durationSeconds <= 0.0) 1e-9 else durationSeconds
             return totalValue / safeDuration
@@ -100,8 +104,8 @@ data class RateResult(
 data class DecayingRateResult(
     override val rate: Double,
     override val timestampNanos: Long,
-    override val name: String? = null
-) : Result, HasRate
+    override val name: String? = null,
+) : Result, HasRate, HasTimestamp
 
 @Serializable
 @SerialName("Quantile")
@@ -112,37 +116,68 @@ data class QuantileResult(
 ) : Result, HasQuantile
 
 @Serializable
-@SerialName("Quantiles")
-data class QuantilesResult(
+@SerialName("Sketch")
+data class SketchResult(
     override val probabilities: DoubleArray,
     override val quantiles: DoubleArray,
+    val gamma: Double,
+    val totalWeights: Double,
+    val zeroCount: Double,
+    val positiveBins: Map<Int, Double>,
+    val negativeBins: Map<Int, Double>,
     override val name: String? = null
 ) : Result, HasQuantiles
 
-@Serializable
-@SerialName("Histogram")
-data class HistogramResult(
-    override val bounds: DoubleArray,
-    override val counts: LongArray,
-    override val name: String? = null
-) : Result, HasHistogram
+fun SketchResult.toSparseHistogram(): SparseHistogramResult {
+    val hasZero = zeroCount > 0.0
+    val totalBuckets = negativeBins.size + (if (hasZero) 1 else 0) + positiveBins.size
+
+    val lowers = DoubleArray(totalBuckets)
+    val uppers = DoubleArray(totalBuckets)
+    val weights = DoubleArray(totalBuckets)
+
+    var cursor = 0
+
+    // 1. Process Negative Bins (Sorted highest index to lowest index -> most negative to closest to zero)
+    negativeBins.entries.sortedByDescending { it.key }.forEach { (index, weight) ->
+        lowers[cursor] = -(gamma.pow(index))
+        uppers[cursor] = -(gamma.pow(index - 1))
+        weights[cursor] = weight
+        cursor++
+    }
+
+    // 2. Process Zero Bin
+    if (hasZero) {
+        lowers[cursor] = 0.0
+        uppers[cursor] = 0.0
+        weights[cursor] = zeroCount
+        cursor++
+    }
+
+    // 3. Process Positive Bins (Sorted lowest index to highest index -> closest to zero to most positive)
+    positiveBins.entries.sortedBy { it.key }.forEach { (index, weight) ->
+        lowers[cursor] = gamma.pow(index - 1)
+        uppers[cursor] = gamma.pow(index)
+        weights[cursor] = weight
+        cursor++
+    }
+
+    return SparseHistogramResult(
+        lowerBounds = lowers,
+        upperBounds = uppers,
+        weights = weights,
+        name = name
+    )
+}
 
 @Serializable
-@SerialName("VectorRange")
-data class VectorRangeResult(
-    override val mins: DoubleArray,
-    override val maxs: DoubleArray,
+@SerialName("SparseHistogram")
+data class SparseHistogramResult(
+    override val lowerBounds: DoubleArray,
+    override val upperBounds: DoubleArray,
+    override val weights: DoubleArray,
     override val name: String? = null
-) : Result, HasVectorRange
-
-@Serializable
-@SerialName("VectorVariance")
-data class VectorVarianceResult(
-    override val totalWeights: Double,
-    override val means: DoubleArray,
-    override val variances: DoubleArray,
-    override val name: String? = null
-) : Result, HasTotalWeights, HasVectorMean, HasVectorVar
+) : Result, HasSparseHistogram
 
 @Serializable
 @SerialName("OLS")
