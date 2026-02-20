@@ -5,7 +5,7 @@ import com.eignex.katom.core.*
 import kotlin.math.exp
 
 class Sum(
-    override val mode: StreamMode = defaultStreamMode,
+    val mode: StreamMode = defaultStreamMode,
     override val name: String? = null
 ) : SeriesStat<SumResult>, HasSum {
 
@@ -13,12 +13,12 @@ class Sum(
     override val sum: Double by _sum
 
     override fun update(
-        value: Double, weight: Double
+        value: Double, timestampNanos: Long, weight: Double
     ) {
         _sum.add(value * weight)
     }
 
-    override fun read() = SumResult(sum, name)
+    override fun read(timestampNanos: Long) = SumResult(sum, name)
 
     override fun merge(values: SumResult) {
         _sum.add(values.sum)
@@ -30,7 +30,7 @@ class Sum(
 }
 
 class Mean(
-    override val mode: StreamMode = defaultStreamMode,
+    val mode: StreamMode = defaultStreamMode,
     override val name: String? = null
 ) : SeriesStat<WeightedMeanResult>,
     HasTotalWeights, HasMean {
@@ -41,7 +41,7 @@ class Mean(
     override val totalWeights: Double by _totalWeights
     override val mean: Double by _mean
 
-    override fun update(value: Double, weight: Double) {
+    override fun update(value: Double, timestampNanos: Long, weight: Double) {
         val oldMean = _mean.load()
         val nextW = _totalWeights.addAndGet(weight)
 
@@ -51,7 +51,7 @@ class Mean(
         _mean.add(r)
     }
 
-    override fun read() = WeightedMeanResult(totalWeights, mean, name)
+    override fun read(timestampNanos: Long) = WeightedMeanResult(totalWeights, mean, name)
 
     override fun merge(values: WeightedMeanResult) {
         if (values.totalWeights <= 0.0) return
@@ -71,7 +71,7 @@ class Mean(
 }
 
 class Variance(
-    override val mode: StreamMode = defaultStreamMode,
+    val mode: StreamMode = defaultStreamMode,
     override val name: String? = null
 ) : SeriesStat<WeightedVarianceResult>, HasMean, HasSampleVariance {
 
@@ -83,7 +83,7 @@ class Variance(
     override val mean: Double by _mean
     override val sst: Double by _sst
 
-    override fun update(value: Double, weight: Double) {
+    override fun update(value: Double, timestampNanos: Long, weight: Double) {
         val oldMean = mean
         val nextW = _totalWeights.addAndGet(weight)
 
@@ -121,12 +121,12 @@ class Variance(
         _sst.store(0.0)
     }
 
-    override fun read() =
+    override fun read(timestampNanos: Long) =
         WeightedVarianceResult(totalWeights, mean, variance, name)
 }
 
 class Moments(
-    override val mode: StreamMode = defaultStreamMode,
+    val mode: StreamMode = defaultStreamMode,
     override val name: String? = null,
 ) : SeriesStat<MomentsResult>, HasMean, HasSampleVariance, HasShapeMoments {
 
@@ -143,7 +143,7 @@ class Moments(
     override val m3: Double by _m3
     override val m4: Double by _m4
 
-    override fun update(value: Double, weight: Double) {
+    override fun update(value: Double, timestampNanos: Long, weight: Double) {
         if (weight <= 0.0) return
 
         val oldM1 = _m1.load()
@@ -208,13 +208,13 @@ class Moments(
         _m4.store(0.0)
     }
 
-    override fun read() =
+    override fun read(timestampNanos: Long) =
         MomentsResult(totalWeights, mean, m2, m3, m4, name)
 }
 
-class DecayingMean(
+class RollingMean(
     val alpha: Double,
-    override val mode: StreamMode = defaultStreamMode,
+    val mode: StreamMode = defaultStreamMode,
     override val name: String? = null
 ) : SeriesStat<WeightedMeanResult>, HasMean, HasTotalWeights {
 
@@ -235,7 +235,7 @@ class DecayingMean(
         }
 
 
-    override fun update(value: Double, weight: Double) {
+    override fun update(value: Double, timestampNanos: Long, weight: Double) {
         val a = getCorrection(weight)
         _biasedMean.add(a * (value - _biasedMean.load()))
         _totalWeights.add(weight)
@@ -272,12 +272,12 @@ class DecayingMean(
         _totalWeights.store(0.0)
     }
 
-    override fun read() = WeightedMeanResult(totalWeights, mean, name)
+    override fun read(timestampNanos: Long) = WeightedMeanResult(totalWeights, mean, name)
 }
 
-class DecayingVariance(
+class RollingVariance(
     val alpha: Double,
-    override val mode: StreamMode = defaultStreamMode,
+    val mode: StreamMode = defaultStreamMode,
     override val name: String? = null
 ) : SeriesStat<WeightedVarianceResult>, HasMean, HasVariance, HasTotalWeights {
 
@@ -307,8 +307,8 @@ class DecayingVariance(
             return if (correction == 0.0) 0.0 else biasedVar / correction
         }
 
-    override fun update(value: Double, weight: Double) {
-        val a = getCorrection(weight) // Corrected from alpha * weight
+    override fun update(value: Double, timestampNanos: Long, weight: Double) {
+        val a = getCorrection(weight)
 
         val currentRawMean = _biasedMean.load()
         val delta = value - currentRawMean
@@ -364,7 +364,7 @@ class DecayingVariance(
         _totalWeights.store(0.0)
     }
 
-    override fun read() = WeightedVarianceResult(
+    override fun read(timestampNanos: Long) = WeightedVarianceResult(
         totalWeights,
         mean,
         variance,

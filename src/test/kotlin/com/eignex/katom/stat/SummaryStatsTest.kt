@@ -246,12 +246,12 @@ class MomentsTest {
     }
 }
 
-class DecayingStatsTest {
+class RollingStatsTest {
     private val delta = 1e-9
 
     @Test
-    fun `DecayingMean merge behavior`() {
-        val d1 = DecayingMean(alpha = 0.5)
+    fun `RollingMean merge behavior`() {
+        val d1 = RollingMean(alpha = 0.5)
         d1.update(10.0)
         val d2 = WeightedMeanResult(1.0, 20.0)
 
@@ -261,8 +261,8 @@ class DecayingStatsTest {
     }
 
     @Test
-    fun `DecayingMean biases toward heavy recent values`() {
-        val stat = DecayingMean(alpha = 0.5)
+    fun `RollingMean biases toward heavy recent values`() {
+        val stat = RollingMean(alpha = 0.5)
         stat.update(10.0, 1.0)
         stat.update(100.0, 10.0) // Massive recent update
 
@@ -272,8 +272,8 @@ class DecayingStatsTest {
     }
 
     @Test
-    fun `DecayingVariance tracking volatility shift`() {
-        val stat = DecayingVariance(alpha = 0.1)
+    fun `RollingVariance tracking volatility shift`() {
+        val stat = RollingVariance(alpha = 0.1)
 
         // Phase 1: Low variance
         repeat(50) { stat.update(10.0, 1.0) }
@@ -287,8 +287,8 @@ class DecayingStatsTest {
     }
 
     @Test
-    fun `DecayingVariance empty merge`() {
-        val stat = DecayingVariance(alpha = 0.1)
+    fun `RollingVariance empty merge`() {
+        val stat = RollingVariance(alpha = 0.1)
         stat.update(10.0, 1.0)
         stat.update(20.0, 1.0)
         val currentVar = stat.variance
@@ -300,8 +300,8 @@ class DecayingStatsTest {
     }
 
     @Test
-    fun `DecayingVariance bias correction prevents zero division`() {
-        val stat = DecayingVariance(alpha = 0.1)
+    fun `RollingVariance bias correction prevents zero division`() {
+        val stat = RollingVariance(alpha = 0.1)
         // Should return 0.0 or something sensible, not NaN, before updates
         assertEquals(0.0, stat.mean, delta)
         assertEquals(0.0, stat.variance, delta)
@@ -309,12 +309,12 @@ class DecayingStatsTest {
 
     @Test
     fun `test reset for decaying stats`() {
-        val meanStat = DecayingMean(alpha = 0.5)
+        val meanStat = RollingMean(alpha = 0.5)
         meanStat.update(10.0)
         meanStat.reset()
         assertEquals(0.0, meanStat.mean, delta)
 
-        val varStat = DecayingVariance(alpha = 0.5)
+        val varStat = RollingVariance(alpha = 0.5)
         varStat.update(10.0)
         varStat.update(20.0)
         varStat.reset()

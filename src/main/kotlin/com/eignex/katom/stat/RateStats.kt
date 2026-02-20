@@ -6,99 +6,84 @@ import kotlin.math.exp
 import kotlin.time.Duration
 
 class Rate(
-    override val mode: StreamMode = defaultStreamMode,
+    val mode: StreamMode = defaultStreamMode,
     override val name: String? = null
-) : TimeStat<RateResult>, HasRate {
+) : SeriesStat<RateResult>, HasRate {
 
     private val _totalValues = mode.newDouble(0.0)
 
     @Volatile
-    private var _startTime = Long.MIN_VALUE
-    val startTime: Long get() = _startTime
+    private var _startTimestampNanos = Long.MIN_VALUE
+    val startTimestampNanos: Long get() = _startTimestampNanos
 
     override fun update(
-        value: Double,
-        nanos: Long,
-        weight: Double
+        value: Double, timestampNanos: Long, weight: Double
     ) {
-        if (_startTime == Long.MIN_VALUE) {
-            _startTime = nanos
+        if (_startTimestampNanos == Long.MIN_VALUE) {
+            _startTimestampNanos = timestampNanos
         }
         _totalValues.add(value * weight)
     }
 
-    override fun read(): RateResult {
-        val start = _startTime
-        val now = System.nanoTime()
-
-        if (start == Long.MIN_VALUE) {
-            return RateResult(
-                startTime = now,
-                totalValue = 0.0,
-                timestampNanos = now,
-                name = name
-            )
-        }
-
+    override fun read(timestampNanos: Long): RateResult {
+        val start = if (_startTimestampNanos == Long.MIN_VALUE) timestampNanos
+        else _startTimestampNanos
         return RateResult(
-            startTime = start,
+            startTimestampNanos = start,
             totalValue = _totalValues.load(),
-            timestampNanos = now,
+            timestampNanos = timestampNanos,
             name = name
         )
     }
 
     override fun merge(values: RateResult) {
-        if (values.totalValue == 0.0) return // Nothing to merge
+        if (values.totalValue == 0.0) return
 
         _totalValues.add(values.totalValue)
 
-        val currentStart = _startTime
-        if (currentStart == Long.MIN_VALUE || values.startTime < currentStart) {
-            _startTime = values.startTime
+        val currentStart = _startTimestampNanos
+        if (currentStart == Long.MIN_VALUE || values.startTimestampNanos < currentStart) {
+            _startTimestampNanos = values.startTimestampNanos
         }
     }
 
     override fun reset() {
-        _startTime = Long.MIN_VALUE
+        _startTimestampNanos = Long.MIN_VALUE
         _totalValues.store(0.0)
     }
 
     override val rate: Double get() = read().rate
-    override val timestampNanos: Long get() = System.nanoTime()
 }
 
 class DecayingRate(
     halfLife: Duration,
-    override val mode: StreamMode = defaultStreamMode,
+    val mode: StreamMode = defaultStreamMode,
     override val name: String? = null,
-) : TimeStat<DecayingRateResult>, HasRate {
+) : SeriesStat<DecayingRateResult>, HasRate {
 
     private val alpha = 0.69314718056 / halfLife.inWholeNanoseconds.toDouble()
     private val rotationThresholdNanos = halfLife.inWholeNanoseconds * 50
 
     private class Epoch(
-        val landmarkNanos: Long,
-        val accumulator: StreamDouble
+        val landmarkNanos: Long, val accumulator: StreamDouble
     )
 
     private val epochRef = mode.newReference(
         Epoch(
-            System.nanoTime(),
-            mode.newDouble(0.0)
+            System.nanoTime(), mode.newDouble(0.0)
         )
     )
 
-    override fun update(value: Double, nanos: Long, weight: Double) {
+    override fun update(value: Double, timestampNanos: Long, weight: Double) {
         while (true) {
             val currentEpoch = epochRef.load()
 
-            if (nanos - currentEpoch.landmarkNanos > rotationThresholdNanos) {
-                tryRotateEpoch(currentEpoch, nanos)
+            if (timestampNanos - currentEpoch.landmarkNanos > rotationThresholdNanos) {
+                tryRotateEpoch(currentEpoch, timestampNanos)
                 continue
             }
 
-            val dt = nanos - currentEpoch.landmarkNanos
+            val dt = timestampNanos - currentEpoch.landmarkNanos
             val scaleFactor = exp(alpha * dt)
             currentEpoch.accumulator.add(value * weight * scaleFactor)
             return
@@ -116,16 +101,15 @@ class DecayingRate(
         epochRef.compareAndSet(oldEpoch, newEpoch)
     }
 
-    override fun read(): DecayingRateResult {
-        val now = System.nanoTime()
+    override fun read(timestampNanos: Long): DecayingRateResult {
         val currentEpoch = epochRef.load()
         val totalAccumulated = currentEpoch.accumulator.load()
 
-        val dt = (now - currentEpoch.landmarkNanos).toDouble()
+        val dt = (timestampNanos - currentEpoch.landmarkNanos).toDouble()
         val currentEnergy = totalAccumulated * exp(-alpha * dt)
-        val ratePerSec = currentEnergy * alpha * 1_000_000_000.0
+        val ratePerSec = currentEnergy * alpha * 1e9
 
-        return DecayingRateResult(ratePerSec, now, name)
+        return DecayingRateResult(ratePerSec, timestampNanos, name)
     }
 
     override fun merge(values: DecayingRateResult) {
@@ -140,7 +124,7 @@ class DecayingRate(
                 continue
             }
 
-            val incomingEnergy = values.rate / (alpha * 1_000_000_000.0)
+            val incomingEnergy = values.rate / (alpha * 1e9)
             val dt = (now - currentEpoch.landmarkNanos).toDouble()
             val scaledIncomingEnergy = incomingEnergy * exp(alpha * dt)
 
@@ -151,14 +135,11 @@ class DecayingRate(
 
     override fun reset() {
         epochRef.compareAndSet(
-            epochRef.load(),
-            Epoch(
-                System.nanoTime(),
-                mode.newDouble(0.0)
+            epochRef.load(), Epoch(
+                System.nanoTime(), mode.newDouble(0.0)
             )
         )
     }
 
     override val rate: Double get() = read().rate
-    override val timestampNanos: Long get() = System.nanoTime()
 }
