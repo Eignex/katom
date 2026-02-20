@@ -3,8 +3,12 @@
 TODO:
 
 histogram algos
-- ddsketch
-- frugal streaming
+- [X] ddsketch
+- [X] frugal streaming
+- [ ] T digest
+- [X] HDR
+- [ ] reservoir
+- [ ] linear
 
 cardinality
 - hyperloglog
